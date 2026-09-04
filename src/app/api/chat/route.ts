@@ -20,6 +20,40 @@ interface ChatMessage {
   content: string;
 }
 
+function mockAnswer(userText: string): string {
+  const docs = searchDocs(userText);
+  const intro = "[데모 응답] ANTHROPIC_API_KEY가 아직 등록되지 않아 예시 답변을 보여드리고 있어요.";
+
+  if (docs.length === 0) {
+    return `${intro}\n\n실제 서비스에서는 Claude가 KISTEP 관련 자료를 바탕으로 답변합니다.`;
+  }
+
+  return `${intro}\n\n참고할 만한 자료로 "${docs[0].title}"이(가) 있어요:\n\n${docs[0].content}`;
+}
+
+function chunkText(text: string, size: number): string[] {
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; i += size) {
+    chunks.push(text.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function mockStream(userText: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const chunks = chunkText(mockAnswer(userText), 3);
+
+  return new ReadableStream({
+    async start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      controller.close();
+    },
+  });
+}
+
 function buildSystemPrompt(query: string): string {
   const docs = searchDocs(query);
   const context = docs
@@ -38,15 +72,6 @@ function buildSystemPrompt(query: string): string {
 
 export async function POST(req: Request) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: "ANTHROPIC_API_KEY가 설정되지 않았습니다." }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-      }
-    );
-  }
 
   const { messages } = (await req.json()) as { messages: ChatMessage[] };
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -57,6 +82,17 @@ export async function POST(req: Request) {
   }
 
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
+
+  if (!apiKey) {
+    return new Response(mockStream(lastUserMessage?.content ?? ""), {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Demo-Mode": "true",
+        ...CORS_HEADERS,
+      },
+    });
+  }
+
   const system = buildSystemPrompt(lastUserMessage?.content ?? "");
 
   const client = new Anthropic({ apiKey });
