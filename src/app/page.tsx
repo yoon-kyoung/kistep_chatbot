@@ -7,6 +7,8 @@ interface Message {
   content: string;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_CHAT_API_URL ?? "";
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -26,7 +28,7 @@ export default function Home() {
     abortRef.current = controller;
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: nextMessages }),
